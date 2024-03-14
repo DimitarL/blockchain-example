@@ -2,90 +2,106 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/binary"
 	"fmt"
 	"time"
+
+	"github.com/DimitarL/blockchain-example/transaction"
 )
 
-type transaction struct {
-	sender         string
-	receiver       string
-	amount         float64
-	transactionFee float64
-	signature      string
-	timestamp      string
-}
+// type transaction struct {
+// 	sender         string
+// 	receiver       string
+// 	amount         float64
+// 	transactionFee float64
+// 	signature      string
+// 	timestamp      string
+// }
 
 type block struct {
 	index        int
-	timestamp    string
-	transaction  []transaction
-	previousHash string
-	hash         string
+	timestamp    int64
+	transactions []*transaction.Transaction
+	previousHash []byte
+	hash         []byte
 }
 
-var blockchain []block
+type blockchain struct {
+	chain []*block
+}
 
 // Create the genesis block (first block in the blockchain)
-func createGenesisBlock() {
+func (bc *blockchain) createGenesisBlock() {
+	tx := createGenesisTransaction()
 	genesisBlock := block{
 		index:        0,
-		timestamp:    time.Now().String(),
-		transaction:  []transaction{},
-		previousHash: "",
+		timestamp:    time.Now().Unix(),
+		transactions: []*transaction.Transaction{tx},
+		previousHash: nil,
 	}
 	genesisBlock.hash = calculateHash(&genesisBlock)
 
-	blockchain = append(blockchain, genesisBlock)
-}
-
-// Calculate the SHA-256 hash of a block
-func calculateHash(block *block) string {
-	record := fmt.Sprintf("%d%s%v%s", block.index, block.timestamp, block.transaction, block.previousHash)
-	hashInBytes := sha256.Sum256([]byte(record))
-
-	return hex.EncodeToString(hashInBytes[:])
+	bc.chain = append(bc.chain, &genesisBlock)
 }
 
 // Create a new transaction
-func createTransaction() transaction {
-	return transaction{
-		sender:         "Alice",
-		receiver:       "Bob",
-		amount:         10.0,
-		transactionFee: 0.2,
-		signature:      "abc123", // Placeholder for the transaction signature
-		timestamp:      time.Now().String(),
+func createGenesisTransaction() *transaction.Transaction {
+	return &transaction.Transaction{
+		Inputs: []transaction.TransactionInput{},
+		Outputs: []transaction.TransactionOutput{
+			{
+				Value:     1000, // Initial supply
+				PublicKey: nil,  // Placeholder for recipient's public key
+			},
+		},
 	}
 }
 
-// Create a new block with the given data
-func generateBlock(previousBlock *block, transactions *[]transaction) block {
-	newBlock := block{
-		index:        previousBlock.index + 1,
-		timestamp:    time.Now().String(),
-		transaction:  *transactions,
-		previousHash: previousBlock.hash,
+// Calculate the SHA-256 hash of a block
+func calculateHash(block *block) []byte {
+	var data []byte
+	data = append(data, *int64ToBytes(int64(block.index))...)
+	data = append(data, block.previousHash...)
+	data = append(data, *int64ToBytes(block.timestamp)...)
+	for _, tx := range block.transactions {
+		data = append(data, *serializeTransactionData(tx)...)
 	}
-	newBlock.hash = calculateHash(&newBlock)
+	hashInBytes := sha256.Sum256(data)
 
-	return newBlock
+	return hashInBytes[:]
 }
 
-// Check if a block is valid by verifying its hash and index
-func isBlockValid(newBlock *block, previousBlock *block) bool {
-	if previousBlock.index+1 != newBlock.index || previousBlock.hash != newBlock.previousHash || calculateHash(newBlock) != newBlock.hash {
-		return false
-	}
+func int64ToBytes(number int64) *[]byte {
+	numberInBytes := make([]byte, 8)
 
-	return true
+	binary.BigEndian.PutUint64(numberInBytes, uint64(number))
+
+	return &numberInBytes
 }
 
-func printBlockchain() {
-	for _, block := range blockchain {
+// Create a consistent representation of the transaction's content
+// in a format that can be hashed
+func serializeTransactionData(tx *transaction.Transaction) *[]byte {
+	var data []byte
+
+	for _, input := range tx.Inputs {
+		data = append(data, input.TransactionID...)
+		data = append(data, byte(input.OutputIndex))
+	}
+
+	for _, output := range tx.Outputs {
+		data = append(data, output.PublicKey...)
+		data = append(data, *int64ToBytes(int64(output.Value))...)
+	}
+
+	return &data
+}
+
+func (bc *blockchain) printBlockchain() {
+	for _, block := range bc.chain {
 		fmt.Printf("Index: %d\n", block.index)
-		fmt.Printf("Timestamp: %s\n", block.timestamp)
-		fmt.Printf("Transactions: %v\n", block.transaction)
+		fmt.Printf("Timestamp: %d\n", block.timestamp)
+		fmt.Printf("Transactions: %v\n", block.transactions)
 		fmt.Printf("Previous Hash: %s\n", block.previousHash)
 		fmt.Printf("Hash: %s\n", block.hash)
 		fmt.Println()
@@ -93,15 +109,9 @@ func printBlockchain() {
 }
 
 func main() {
-	createGenesisBlock()
+	bc := blockchain{chain: []*block{}}
 
-	newTransaction := createTransaction()
+	bc.createGenesisBlock()
 
-	newBlock := generateBlock(&blockchain[len(blockchain)-1], &[]transaction{newTransaction})
-
-	if isBlockValid(&newBlock, &blockchain[len(blockchain)-1]) {
-		blockchain = append(blockchain, newBlock)
-	}
-
-	printBlockchain()
+	bc.printBlockchain()
 }
