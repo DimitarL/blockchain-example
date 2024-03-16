@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -166,7 +167,7 @@ func generatePrivateKey() *ecdsa.PrivateKey {
 }
 
 // Create a new block with the given data
-func (bc *blockchain) generateBlock() {
+func (bc *blockchain) generateBlock() *block {
 	previousBlock := bc.chain[len(bc.chain)-1]
 	tx := bc.createNewTransaction(previousBlock)
 
@@ -178,7 +179,30 @@ func (bc *blockchain) generateBlock() {
 	}
 	newBlock.hash = calculateHash(&newBlock)
 
-	bc.chain = append(bc.chain, &newBlock)
+	return &newBlock
+}
+
+// Check if a block is valid by verifying its hash and index
+func (bc *blockchain) validateBlock(block *block) {
+	if bc.chain[len(bc.chain)-1].index + 1 != block.index {
+		slog.With(slog.String("error", "Block is invalid")).
+			Error("Previous block and current block have different indexes")
+		os.Exit(1)
+	}
+
+	if !bytes.Equal(bc.chain[len(bc.chain)-1].hash, block.previousHash) {
+		slog.With(slog.String("error", "Block is invalid")).
+			Error("Previous block and current block have different hash")
+		os.Exit(1)
+	}
+
+	if !bytes.Equal(calculateHash(block), block.hash) {
+		slog.With(slog.String("error", "Block is invalid")).
+			Error("There is an error int current block's hash")
+		os.Exit(1)
+	}
+
+	bc.chain = append(bc.chain, block)
 }
 
 func (bc *blockchain) printBlockchain() {
@@ -197,7 +221,8 @@ func main() {
 
 	bc.createGenesisBlock()
 
-	bc.generateBlock()
+	newBlock := bc.generateBlock()
+	bc.validateBlock(newBlock)
 
 	bc.printBlockchain()
 }
