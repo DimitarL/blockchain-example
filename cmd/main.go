@@ -97,6 +97,44 @@ func serializeTransactionData(tx *transaction.Transaction) *[]byte {
 	return &data
 }
 
+func (bc *blockchain) createNewTransaction(previousBlock *block) *transaction.Transaction {
+	return &transaction.Transaction{
+		Inputs: []transaction.TransactionInput{
+			{
+				TransactionID: calculateHash(previousBlock),
+				OutputIndex:   0,
+				Signature:     nil,
+			},
+		},
+		Outputs: []transaction.TransactionOutput{
+			{
+				Value:     50,
+				PublicKey: nil,
+			},
+			{
+				Value:     previousBlock.transactions[0].Outputs[0].Value - 50, // Return change to the sender
+				PublicKey: nil,
+			},
+		},
+	}
+}
+
+// Create a new block with the given data
+func (bc *blockchain) generateBlock() {
+	previousBlock := bc.chain[len(bc.chain)-1]
+	tx := bc.createNewTransaction(previousBlock)
+
+	newBlock := block{
+		index:        previousBlock.index + 1,
+		timestamp:    time.Now().Unix(),
+		transactions: []*transaction.Transaction{tx},
+		previousHash: previousBlock.hash,
+	}
+	newBlock.hash = calculateHash(&newBlock)
+
+	bc.chain = append(bc.chain, &newBlock)
+}
+
 func (bc *blockchain) printBlockchain() {
 	for _, block := range bc.chain {
 		fmt.Printf("Index: %d\n", block.index)
@@ -112,6 +150,8 @@ func main() {
 	bc := blockchain{chain: []*block{}}
 
 	bc.createGenesisBlock()
+
+	bc.generateBlock()
 
 	bc.printBlockchain()
 }
