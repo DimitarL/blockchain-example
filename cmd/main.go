@@ -1,9 +1,14 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/DimitarL/blockchain-example/transaction"
@@ -33,6 +38,7 @@ type blockchain struct {
 // Create the genesis block (first block in the blockchain)
 func (bc *blockchain) createGenesisBlock() {
 	tx := createGenesisTransaction()
+
 	genesisBlock := block{
 		index:        0,
 		timestamp:    time.Now().Unix(),
@@ -46,7 +52,7 @@ func (bc *blockchain) createGenesisBlock() {
 
 // Create a new transaction
 func createGenesisTransaction() *transaction.Transaction {
-	return &transaction.Transaction{
+	genesisTransaction := transaction.Transaction{
 		Inputs: []transaction.TransactionInput{},
 		Outputs: []transaction.TransactionOutput{
 			{
@@ -54,6 +60,27 @@ func createGenesisTransaction() *transaction.Transaction {
 				PublicKey: nil,  // Placeholder for recipient's public key
 			},
 		},
+	}
+
+	privateKey := generatePrivateKey()
+
+	signTransaction(&genesisTransaction, privateKey)
+
+	return &genesisTransaction
+}
+
+// Sign a transaction input using the provided private key
+func signTransaction(tx *transaction.Transaction, privateKey *ecdsa.PrivateKey) {
+	for _, input := range tx.Inputs {
+		data := sha256.Sum256(*serializeTransactionData(tx))
+
+		r, s, err := ecdsa.Sign(rand.Reader, privateKey, data[:])
+		if err != nil {
+			slog.With(slog.String("error", err.Error())).Error("Failed to sign transaction: %v", err)
+			os.Exit(1)
+		}
+		signature := append(r.Bytes(), s.Bytes()...)
+		input.Signature = append(signature, byte(0)) // Append recovery ID (0 or 1)
 	}
 }
 
@@ -98,7 +125,10 @@ func serializeTransactionData(tx *transaction.Transaction) *[]byte {
 }
 
 func (bc *blockchain) createNewTransaction(previousBlock *block) *transaction.Transaction {
-	return &transaction.Transaction{
+	transactionValue := 123456 // Sending 1.23456 BTC
+	transactionFee := 10000    // Transaction fee (e.g., 0.0001 BTC)
+
+	newTx := transaction.Transaction{
 		Inputs: []transaction.TransactionInput{
 			{
 				TransactionID: calculateHash(previousBlock),
@@ -108,15 +138,31 @@ func (bc *blockchain) createNewTransaction(previousBlock *block) *transaction.Tr
 		},
 		Outputs: []transaction.TransactionOutput{
 			{
-				Value:     50,
+				Value:     transactionValue,
 				PublicKey: nil,
 			},
 			{
-				Value:     previousBlock.transactions[0].Outputs[0].Value - 50, // Return change to the sender
+				Value:     previousBlock.transactions[0].Outputs[0].Value - transactionFee, // Return change to the sender
 				PublicKey: nil,
 			},
 		},
 	}
+
+	privateKey := generatePrivateKey()
+
+	signTransaction(&newTx, privateKey)
+
+	return &newTx
+}
+
+func generatePrivateKey() *ecdsa.PrivateKey {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		slog.With(slog.String("error", err.Error())).Error("Failed to generate new ECDSA key")
+		os.Exit(1)
+	}
+
+	return privateKey
 }
 
 // Create a new block with the given data
